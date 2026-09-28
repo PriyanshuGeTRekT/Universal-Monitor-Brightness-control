@@ -1,0 +1,90 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box}
+html,body{width:1280px;height:720px;overflow:hidden}
+body{position:relative;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:#fff;
+  background:
+    radial-gradient(900px 700px at 70% 45%, #3d6fd6 0%, transparent 60%),
+    radial-gradient(700px 600px at 25% 80%, #7c4bd1 0%, transparent 62%),
+    radial-gradient(600px 500px at 15% 10%, #1c8fb8 0%, transparent 60%),
+    #101a3a}
+.fl{font-family:"Segoe Fluent Icons","Segoe MDL2 Assets";font-style:normal}
+/* taskbar */
+.taskbar{position:absolute;left:0;right:0;bottom:0;height:48px;background:rgba(28,28,30,.86);
+  border-top:1px solid rgba(255,255,255,.08);backdrop-filter:blur(30px);display:flex;align-items:center}
+.center{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.app{width:40px;height:40px;border-radius:5px;display:grid;place-items:center}
+.app i{font-size:20px;color:#e8e8e8}
+.win{display:grid;grid-template-columns:9px 9px;gap:2px}
+.win span{width:9px;height:9px;background:linear-gradient(135deg,#6ccbff,#1d7fe0)}
+.tray{position:absolute;right:8px;display:flex;align-items:center;gap:2px;height:48px}
+.ti{height:40px;min-width:32px;padding:0 6px;border-radius:5px;display:grid;place-items:center;color:#f2f2f2}
+.ti i{font-size:15px}
+.ti.hot{background:rgba(255,255,255,.1);box-shadow:0 0 0 2px #ffd66e, 0 0 22px 4px rgba(255,200,90,.55)}
+.sys{display:flex;gap:12px;padding:0 10px;height:40px;align-items:center;border-radius:5px}
+.clock{font-size:12px;text-align:right;line-height:1.35;padding:0 8px}
+/* popup */
+.popup{position:absolute;right:12px;bottom:60px;width:359px;border-radius:8px;
+  box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.09)}
+/* context menu mock */
+.menu{position:absolute;right:700px;bottom:60px;width:210px;background:#2c2c2c;border-radius:8px;padding:4px;
+  box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.09);font-size:14px}
+.menu .it{height:34px;border-radius:4px;display:flex;align-items:center;padding:0 10px;gap:12px;color:#fff}
+.menu .it.sel{background:rgba(255,255,255,.07)}
+.menu .it i{width:14px;font-size:12px}
+.menu .sep{height:1px;background:rgba(255,255,255,.1);margin:4px 2px}
+/* callouts */
+.note{position:absolute;font-size:15px;line-height:1.35;background:rgba(10,14,28,.78);border:1px solid rgba(255,255,255,.16);
+  border-radius:10px;padding:10px 14px;backdrop-filter:blur(8px);color:#eef2fb}
+.note b{color:#ffd66e;font-weight:600}
+.num{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#ffd66e;color:#161a24;font-weight:700;font-size:13px;margin-right:8px}
+svg.arrows{position:absolute;inset:0;pointer-events:none;z-index:10}
+.title{position:absolute;left:48px;top:40px}
+.title h2{font-family:"Segoe UI Variable Display","Segoe UI",sans-serif;font-size:34px;font-weight:700}
+.title p{font-size:17px;color:#d5def0;margin-top:6px}
+</style></head><body>
+
+<div class="title">
+  <h2>Lives in your system tray</h2>
+  <p>No window, no taskbar button. Click the sun whenever you need it.</p>
+</div>
+
+<img class="popup" src="../images/popup-dark.png">
+
+<div class="menu">
+  <div class="it sel"><i class="fl">&#xE73E;</i>Start with Windows</div>
+  <div class="sep"></div>
+  <div class="it"><i></i>Exit</div>
+</div>
+
+<div class="note" style="right:680px;bottom:200px;width:250px"><span class="num">2</span><b>Right-click</b> the icon for<br>Start with Windows and Exit</div>
+<div class="note" style="right:88px;bottom:470px;width:290px"><span class="num">3</span>One slider per display. <b>Drag</b>, <b>scroll</b> or use the <b>arrow keys</b>. Click away to hide it.</div>
+<div class="note" style="left:604px;bottom:64px;width:280px"><span class="num">1</span><b>Left-click</b> the sun icon in the<br>tray to open the sliders</div>
+
+<svg class="arrows" viewBox="0 0 1280 720">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#ffd66e"/></marker></defs>
+  <path d="M860,658 C 900,712 1000,712 1072,698" stroke="#ffd66e" stroke-width="2.5" fill="none" stroke-dasharray="6 5" marker-end="url(#a)"/>
+</svg>
+
+<div class="taskbar">
+  <div class="center">
+    <div class="app"><div class="win"><span></span><span></span><span></span><span></span></div></div>
+    <div class="app"><i class="fl">&#xE721;</i></div>
+    <div class="app"><i class="fl">&#xE8B7;</i></div>
+    <div class="app"><i class="fl">&#xE774;</i></div>
+    <div class="app"><i class="fl">&#xE715;</i></div>
+  </div>
+  <div class="tray">
+    <div class="ti"><i class="fl">&#xE70E;</i></div>
+    <div class="ti hot" id="sun">
+      <svg width="16" height="16" viewBox="0 0 100 100"><g stroke="#fff" stroke-width="9.5" stroke-linecap="round">
+        <line x1="80" y1="50" x2="95" y2="50"/><line x1="71.2" y1="71.2" x2="81.8" y2="81.8"/><line x1="50" y1="80" x2="50" y2="95"/><line x1="28.8" y1="71.2" x2="18.2" y2="81.8"/>
+        <line x1="20" y1="50" x2="5" y2="50"/><line x1="28.8" y1="28.8" x2="18.2" y2="18.2"/><line x1="50" y1="20" x2="50" y2="5"/><line x1="71.2" y1="28.8" x2="81.8" y2="18.2"/></g>
+        <circle cx="50" cy="50" r="19" fill="#fff"/></svg>
+    </div>
+    <div class="sys"><i class="fl" style="font-size:15px">&#xE701;</i><i class="fl" style="font-size:15px">&#xE767;</i><i class="fl" style="font-size:15px">&#xE83F;</i></div>
+    <div class="clock">10:24 AM<br>9/28/2026</div>
+  </div>
+</div>
+</body></html>

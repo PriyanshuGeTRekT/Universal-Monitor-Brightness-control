@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box}
+html,body{width:1280px;height:600px;overflow:hidden}
+body{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;color:#fff;
+  background:
+    radial-gradient(760px 520px at 88% 30%, rgba(40,110,190,.55) 0%, transparent 65%),
+    radial-gradient(640px 460px at 0% 110%, rgba(120,60,170,.45) 0%, transparent 65%),
+    radial-gradient(420px 300px at 30% 0%, rgba(255,170,70,.12) 0%, transparent 70%),
+    #0d121d;
+  display:flex;align-items:center;padding:0 80px;gap:64px}
+.left{flex:1}
+.brand{display:flex;align-items:center;gap:18px;margin-bottom:30px}
+.brand img{width:64px;height:64px;filter:drop-shadow(0 0 22px rgba(255,180,80,.5))}
+.brand div{font-size:16px;letter-spacing:3px;text-transform:uppercase;color:#9fb0cc;font-weight:600}
+h1{font-size:58px;line-height:1.04;font-weight:700;letter-spacing:-1px}
+h1 span{background:linear-gradient(90deg,#ffd66e,#ff9f43);-webkit-background-clip:text;background-clip:text;color:transparent}
+p{margin-top:20px;font-size:21px;color:#c3cde0;line-height:1.5;max-width:560px}
+.chips{display:flex;gap:10px;margin-top:32px;flex-wrap:wrap;max-width:600px}
+.chip{font-size:15px;padding:7px 15px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:#e3e9f5}
+.chip b{color:#ffd66e;font-weight:600}
+.shot{width:390px;border-radius:9px;box-shadow:0 34px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.09)}
+</style></head><body>
+<div class="left">
+  <div class="brand"><img src="../images/icon.svg"><div>Brightness Tray</div></div>
+  <h1>Universal Monitor<br><span>Brightness Control</span></h1>
+  <p>One tray icon, one slider per display. Laptop panels, external monitors and TVs, straight from the Windows taskbar.</p>
+  <div class="chips">
+    <div class="chip"><b>Rust</b> + raw Win32</div>
+    <div class="chip"><b>~320 KB</b> single exe</div>
+    <div class="chip"><b>0%</b> CPU when idle</div>
+    <div class="chip"><b>~250 KB</b> RAM when idle</div>
+    <div class="chip">DDC/CI · WMI · software dimming</div>
+  </div>
+</div>
+<img class="shot" src="../images/popup-dark.png">
+</body></html>

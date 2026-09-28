@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box}
+html,body{width:1280px;height:720px;overflow:hidden}
+html{background:#0d121d}
+body{position:relative;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:#e9eef8;
+  background:radial-gradient(800px 500px at 90% 0%, rgba(40,110,190,.28), transparent 65%),
+             radial-gradient(700px 500px at 0% 100%, rgba(120,60,170,.22), transparent 65%), #0d121d}
+h2{position:absolute;left:60px;top:36px;font-family:"Segoe UI Variable Display","Segoe UI",sans-serif;font-size:32px;font-weight:700;color:#fff}
+.sub{position:absolute;left:60px;top:84px;font-size:16px;color:#9fb0cc}
+.box{position:absolute;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.13);padding:16px 18px}
+.box h3{font-size:19px;font-weight:600;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.box p{font-size:14px;color:#aebbd3;line-height:1.5}
+.box code{font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;color:#d8e2f5;background:rgba(255,255,255,.07);padding:1px 6px;border-radius:5px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.tag{position:absolute;top:14px;right:16px;font-size:12px;font-weight:600;letter-spacing:.5px;padding:3px 9px;border-radius:999px}
+.lbl{position:absolute;font-size:13px;color:#c9d4ea;background:#0d121d;padding:0 6px}
+.idle{position:absolute;left:60px;width:1160px;bottom:48px;height:62px;border-radius:12px;display:flex;align-items:center;gap:26px;padding:0 22px;
+  background:rgba(108,203,95,.08);border:1px solid rgba(108,203,95,.35);font-size:15px;color:#d9f2d4}
+.idle b{color:#8fe27f}
+.idle .h{font-weight:700;color:#fff;margin-right:4px}
+</style></head><body>
+<h2>How it works</h2>
+<div class="sub">Two threads, three ways to change brightness, nothing running in between.</div>
+
+<div class="box" style="left:60px;top:200px;width:270px;height:170px">
+  <h3>UI thread</h3>
+  <p>Tray icon, slider popup and dimming overlays. Sleeps in <code>GetMessageW</code> until you click.</p>
+</div>
+
+<div class="box" style="left:470px;top:200px;width:270px;height:170px">
+  <h3>Worker thread</h3>
+  <p>Talks to the displays. Sleeps in <code>recv()</code>. While you drag, only the newest value is sent.</p>
+</div>
+
+<div class="box" style="left:880px;top:130px;width:340px;height:130px">
+  <span class="tag" style="background:rgba(76,194,255,.16);color:#7fd3ff">HARDWARE</span>
+  <h3><span class="dot" style="background:#4cc2ff"></span>DDC/CI</h3>
+  <p>External monitors over HDMI, DisplayPort or USB-C. VCP code <code>0x10</code> through <code>dxva2.dll</code>.</p>
+</div>
+
+<div class="box" style="left:880px;top:285px;width:340px;height:130px">
+  <span class="tag" style="background:rgba(108,203,95,.16);color:#8fe27f">HARDWARE</span>
+  <h3><span class="dot" style="background:#6ccb5f"></span>WMI</h3>
+  <p>Laptop and other built-in panels via <code>WmiMonitorBrightnessMethods</code>.</p>
+</div>
+
+<div class="box" style="left:880px;top:440px;width:340px;height:130px">
+  <span class="tag" style="background:rgba(255,179,71,.16);color:#ffc36e">FALLBACK</span>
+  <h3><span class="dot" style="background:#ffb347"></span>Software dimming</h3>
+  <p>Anything else: TVs, DisplayLink docks, DDC/CI turned off. A click-through overlay, hidden from screenshots.</p>
+</div>
+
+<svg style="position:absolute;inset:0" viewBox="0 0 1280 720">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8ea0bf"/></marker></defs>
+  <g stroke="#8ea0bf" stroke-width="2" fill="none">
+    <path d="M330,262 L466,262" marker-end="url(#a)"/>
+    <path d="M470,312 L334,312" marker-end="url(#a)"/>
+    <path d="M740,262 C 810,262 810,195 876,195" marker-end="url(#a)"/>
+    <path d="M740,300 C 810,300 810,350 876,350" marker-end="url(#a)"/>
+    <path d="M195,370 L195,505 L876,505" marker-end="url(#a)" stroke-dasharray="7 6"/>
+  </g>
+</svg>
+<div class="lbl" style="left:352px;top:238px">set 42 %</div>
+<div class="lbl" style="left:344px;top:318px">displays + levels</div>
+<div class="lbl" style="left:420px;top:482px">overlay opacity (no hardware involved)</div>
+
+<div class="idle">
+  <span class="h">Popup closed:</span>
+  <span><b>0%</b> CPU, both threads blocked</span>
+  <span>monitor handles and COM <b>released</b></span>
+  <span><b>EcoQoS</b> power mode</span>
+  <span>working set trimmed to <b>~250 KB</b></span>
+</div>
+</body></html>
