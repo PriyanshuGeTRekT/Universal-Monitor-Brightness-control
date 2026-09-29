@@ -10,7 +10,7 @@
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-6ccb5f?style=flat-square"></a>
   <br>
   <a href="https://github.com/PriyanshuGeTRekT/Universal-Monitor-Brightness-control/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PriyanshuGeTRekT/Universal-Monitor-Brightness-control?style=flat-square&logo=github&color=ffd66e"></a>
-  <img alt="Repository views" src="https://komarev.com/ghpvc/?username=PriyanshuGeTRekT-Universal-Monitor-Brightness-control&label=views&style=flat-square&color=9f7aea">
+  <img alt="Repository views" src="https://komarev.com/ghpvc/?username=PriyanshuGeTRekT-brightness-tray&label=views&style=flat-square&color=9f7aea">
 </p>
 
 A tiny Windows tray app that controls the brightness of **every** display you
