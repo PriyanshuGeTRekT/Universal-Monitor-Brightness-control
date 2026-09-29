@@ -8,6 +8,9 @@
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=flat-square&logo=windows">
   <img alt="Written in Rust" src="https://img.shields.io/badge/Rust-Win32-b7410e?style=flat-square&logo=rust">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-6ccb5f?style=flat-square"></a>
+  <br>
+  <a href="https://github.com/PriyanshuGeTRekT/Universal-Monitor-Brightness-control/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/PriyanshuGeTRekT/Universal-Monitor-Brightness-control?style=flat-square&logo=github&color=ffd66e"></a>
+  <img alt="Repository views" src="https://komarev.com/ghpvc/?username=PriyanshuGeTRekT-Universal-Monitor-Brightness-control&label=views&style=flat-square&color=9f7aea">
 </p>
 
 A tiny Windows tray app that controls the brightness of **every** display you
@@ -172,6 +175,17 @@ install.ps1      per-user install + Start with Windows
 uninstall.ps1    remove it again
 docs/            README images and the scripts that generate them
 ```
+
+## Star history
+
+If this saved you a trip to your monitor's menu buttons, a ⭐ helps other people find it.
+
+<a href="https://star-history.com/#PriyanshuGeTRekT/Universal-Monitor-Brightness-control&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=priyanshugetrekt/universal-monitor-brightness-control&type=Date&theme=dark">
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=priyanshugetrekt/universal-monitor-brightness-control&type=Date" width="100%">
+  </picture>
+</a>
 
 ## License
 
