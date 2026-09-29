@@ -27,6 +27,9 @@ pub enum Cmd {
     Refresh,
     /// Set display `.0` to `.1` percent.
     Set(usize, u32),
+    /// Change every display by this many percent (keyboard shortcuts),
+    /// enumerating first if needed, then post the new levels to the UI.
+    Nudge(i32),
     /// Drop every handle and COM object and trim the working set.
     Release,
 }
@@ -39,8 +42,9 @@ pub struct Row {
     pub soft: Option<String>,
 }
 
-/// Starts the worker. Results of `Refresh` are posted to `hwnd` as `msg`
-/// with a `Box<Vec<Row>>` in `lParam`.
+/// Starts the worker. Results of `Refresh` and `Nudge` are posted to `hwnd`
+/// as `msg` with a `Box<Vec<Row>>` in `lParam` and the applied nudge (0 for a
+/// refresh) in `wParam`; software-dimmed rows still need that nudge applied.
 pub fn spawn(hwnd: HWND, msg: u32) -> Sender<Cmd> {
     let (tx, rx) = channel();
     let hwnd = hwnd.0 as isize; // HWND is not Send
@@ -69,7 +73,22 @@ fn run(rx: Receiver<Cmd>, hwnd: HWND, msg: u32) {
     let mut b = Backend::default();
     // Latest requested value per display; slider drags produce far more
     // requests than DDC/CI can apply, so only the newest one is sent.
+    // Held-down shortcuts are merged into one nudge the same way.
     let mut pending: Vec<(usize, u32)> = Vec::new();
+    let mut nudge = 0i32;
+    let post = |rows: Vec<Row>, delta: i32| unsafe {
+        let rows = Box::into_raw(Box::new(rows));
+        if PostMessageW(hwnd, msg, WPARAM(delta as isize as usize), LPARAM(rows as isize)).is_err() {
+            drop(Box::from_raw(rows));
+        }
+    };
+    let settle = |b: &mut Backend, pending: &mut Vec<(usize, u32)>, nudge: &mut i32| {
+        b.flush(pending);
+        if *nudge != 0 {
+            post(b.nudge(*nudge), *nudge);
+            *nudge = 0;
+        }
+    };
     while let Ok(cmd) = rx.recv() {
         let mut next = Some(cmd);
         while let Some(cmd) = next.take() {
@@ -78,17 +97,14 @@ fn run(rx: Receiver<Cmd>, hwnd: HWND, msg: u32) {
                     Some(p) => p.1 = v,
                     None => pending.push((i, v)),
                 },
+                Cmd::Nudge(d) => nudge += d,
                 Cmd::Refresh => {
-                    b.flush(&mut pending);
-                    let rows = Box::into_raw(Box::new(b.refresh()));
-                    unsafe {
-                        if PostMessageW(hwnd, msg, WPARAM(0), LPARAM(rows as isize)).is_err() {
-                            drop(Box::from_raw(rows));
-                        }
-                    }
+                    settle(&mut b, &mut pending, &mut nudge);
+                    b.refresh();
+                    post(b.rows(), 0);
                 }
                 Cmd::Release => {
-                    b.flush(&mut pending);
+                    settle(&mut b, &mut pending, &mut nudge);
                     b.release();
                     unsafe {
                         CoFreeUnusedLibraries();
@@ -98,7 +114,7 @@ fn run(rx: Receiver<Cmd>, hwnd: HWND, msg: u32) {
             }
             next = rx.try_recv().ok();
         }
-        b.flush(&mut pending);
+        settle(&mut b, &mut pending, &mut nudge);
     }
 }
 
@@ -132,28 +148,66 @@ impl Backend {
         self.wmi = None;
     }
 
-    fn flush(&mut self, pending: &mut Vec<(usize, u32)>) {
-        for (i, v) in pending.drain(..) {
-            let Some(m) = self.mons.get_mut(i) else { continue };
-            m.value = v;
-            match m.ctl {
-                Ctl::Wmi => {
-                    if let Some(w) = &self.wmi {
-                        w.set(v);
-                    }
+    fn set(&mut self, i: usize, v: u32) {
+        let Some(m) = self.mons.get_mut(i) else { return };
+        m.value = v;
+        match m.ctl {
+            Ctl::Wmi => {
+                if let Some(w) = &self.wmi {
+                    w.set(v);
                 }
-                Ctl::Ddc { h, max } => unsafe {
-                    SetVCPFeature(h, VCP_BRIGHTNESS, (v * max + 50) / 100);
-                },
-                Ctl::Soft(_) => {} // handled by the UI thread
             }
+            Ctl::Ddc { h, max } => unsafe {
+                SetVCPFeature(h, VCP_BRIGHTNESS, (v * max + 50) / 100);
+            },
+            Ctl::Soft(_) => {} // handled by the UI thread
         }
     }
 
-    fn refresh(&mut self) -> Vec<Row> {
-        self.release();
-        if std::env::var_os("BRIGHTNESS_TRAY_DEMO").is_some() {
+    fn flush(&mut self, pending: &mut Vec<(usize, u32)>) {
+        for (i, v) in pending.drain(..) {
+            self.set(i, v);
+        }
+    }
+
+    /// Moves every hardware-controlled display by `delta` percent.
+    fn nudge(&mut self, delta: i32) -> Vec<Row> {
+        if self.mons.is_empty() {
+            self.refresh();
+        }
+        for i in 0..self.mons.len() {
+            let m = &self.mons[i];
+            if !matches!(m.ctl, Ctl::Soft(_)) {
+                let v = (m.value as i32 + delta).clamp(0, 100) as u32;
+                if v != m.value {
+                    self.set(i, v);
+                }
+            }
+        }
+        self.rows()
+    }
+
+    fn rows(&self) -> Vec<Row> {
+        if demo() {
             return demo_rows();
+        }
+        self.mons
+            .iter()
+            .map(|m| {
+                let soft = match &m.ctl {
+                    Ctl::Soft(dev) => Some(dev.clone()),
+                    _ => None,
+                };
+                let name = if soft.is_some() { format!("{} · software dimming", m.name) } else { m.name.clone() };
+                Row { name: name.encode_utf16().collect(), value: m.value, soft }
+            })
+            .collect()
+    }
+
+    fn refresh(&mut self) {
+        self.release();
+        if demo() {
+            return;
         }
         let targets = display_targets();
         let mut hmons = hmonitors();
@@ -192,18 +246,11 @@ impl Backend {
             }
         }
         self.mons.extend(external);
-        self.mons
-            .iter()
-            .map(|m| {
-                let soft = match &m.ctl {
-                    Ctl::Soft(dev) => Some(dev.clone()),
-                    _ => None,
-                };
-                let name = if soft.is_some() { format!("{} · software dimming", m.name) } else { m.name.clone() };
-                Row { name: name.encode_utf16().collect(), value: m.value, soft }
-            })
-            .collect()
     }
+}
+
+fn demo() -> bool {
+    std::env::var_os("BRIGHTNESS_TRAY_DEMO").is_some()
 }
 
 /// Fake displays for screenshots (`BRIGHTNESS_TRAY_DEMO=1`); nothing is changed.

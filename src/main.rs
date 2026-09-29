@@ -10,6 +10,7 @@
 
 mod backend;
 mod gfx;
+mod shortcuts;
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -18,6 +19,7 @@ use std::sync::mpsc::Sender;
 
 use backend::{Cmd, Row};
 use gfx::Canvas;
+use shortcuts::{Hotkeys, Settings, HK_DOWN, HK_UP, WM_SETTINGS};
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
@@ -34,10 +36,15 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_ROWS: u32 = WM_APP + 2;
 const WM_SHOW: u32 = WM_APP + 3;
+const WM_SHORTCUTS: u32 = WM_APP + 5; // WM_APP + 4 is shortcuts::WM_SETTINGS
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const ID_AUTOSTART: usize = 1;
 const ID_EXIT: usize = 2;
+const ID_SHORTCUTS: usize = 3;
 const TIMER_TRAY: usize = 1;
+const TIMER_OSD: usize = 2;
+/// How long the popup stays up after a keyboard shortcut.
+const OSD_MS: u32 = 1500;
 
 const CLASS: PCWSTR = w!("BrightnessTray.Popup");
 const DIM_CLASS: PCWSTR = w!("BrightnessTray.Dim");
@@ -47,6 +54,7 @@ const DIM_MAX_ALPHA: u32 = 220;
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const RUN_NAME: PCWSTR = w!("BrightnessTray");
 const BACKGROUND_ARG: &str = "--background";
+const SHORTCUTS_ARG: &str = "--shortcuts";
 
 // Layout, in DIPs.
 const WIDTH: f32 = 360.0;
@@ -127,6 +135,11 @@ struct App {
     face: PCWSTR,
     /// Software-dimming overlays, one per dimmed display.
     dims: Vec<Dim>,
+    hotkeys: Hotkeys,
+    settings: Option<Settings>,
+    /// The popup was opened by a keyboard shortcut: shown without taking
+    /// focus, and hidden again after `OSD_MS`.
+    osd: bool,
 }
 
 struct Dim {
@@ -139,12 +152,15 @@ fn main() {
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-        // Second launch: ask the running instance to open its popup instead.
+        let open_shortcuts = std::env::args().any(|a| a == SHORTCUTS_ARG);
+        // Second launch: ask the running instance to open its popup (or the
+        // shortcuts window) instead.
         let _mutex = CreateMutexW(None, true, w!("Local\\BrightnessTray.SingleInstance"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
             if let Ok(h) = FindWindowW(CLASS, None) {
                 let _ = AllowSetForegroundWindow(ASFW_ANY);
-                let _ = PostMessageW(h, WM_SHOW, WPARAM(0), LPARAM(0));
+                let msg = if open_shortcuts { WM_SHORTCUTS } else { WM_SHOW };
+                let _ = PostMessageW(h, msg, WPARAM(0), LPARAM(0));
             }
             return;
         }
@@ -209,6 +225,9 @@ fn main() {
             tray_retries: 0,
             face: pick_font_face(),
             dims: Vec::new(),
+            hotkeys: Hotkeys::load(),
+            settings: None,
+            osd: false,
         });
         let app = Box::into_raw(app);
         APP.store(app, Ordering::Relaxed);
@@ -223,8 +242,12 @@ fn main() {
         if autostart_enabled() {
             set_autostart(true);
         }
+        // A shortcut taken by another app since it was saved is skipped quietly.
+        let _ = app.hotkeys.register(hwnd);
 
-        if std::env::args().any(|a| a == BACKGROUND_ARG) {
+        if open_shortcuts {
+            app.open_settings();
+        } else if std::env::args().any(|a| a == BACKGROUND_ARG) {
             set_eco(true);
             let _ = app.tx.send(Cmd::Release); // trims the startup working set
         } else {
@@ -233,6 +256,12 @@ fn main() {
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            // Tab / Esc handling for the shortcuts window.
+            if let Some(s) = &app.settings {
+                if IsDialogMessageW(s.hwnd, &msg).as_bool() {
+                    continue;
+                }
+            }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -272,8 +301,30 @@ impl App {
                     _ => {}
                 },
                 WM_SHOW => self.show(),
-                WM_ROWS => self.on_rows(*Box::from_raw(l.0 as *mut Vec<Row>)),
+                WM_SHORTCUTS => self.open_settings(),
+                WM_ROWS => self.on_rows(*Box::from_raw(l.0 as *mut Vec<Row>), w.0 as isize as i32),
                 WM_ACTIVATE if loword(w.0) == WA_INACTIVE => self.hide(),
+                WM_ACTIVATE => {
+                    // Clicked while shown by a shortcut: now a normal popup.
+                    self.end_osd();
+                    return None;
+                }
+                WM_HOTKEY => {
+                    let step = self.hotkeys.step as i32;
+                    match w.0 as i32 {
+                        HK_UP => self.shortcut(step),
+                        HK_DOWN => self.shortcut(-step),
+                        _ => {}
+                    }
+                }
+                WM_SETTINGS => self.settings_done(w.0 != 0),
+                WM_TIMER if w.0 == TIMER_OSD => {
+                    if self.hover.is_some() || self.drag.is_some() {
+                        SetTimer(self.hwnd, TIMER_OSD, OSD_MS, None);
+                    } else {
+                        self.hide();
+                    }
+                }
                 WM_CLOSE => self.hide(),
                 WM_PAINT => self.paint(),
                 WM_ERASEBKGND => return Some(LRESULT(1)),
@@ -421,6 +472,7 @@ impl App {
         unsafe {
             let Ok(m) = CreatePopupMenu() else { return };
             let auto = autostart_enabled();
+            let _ = AppendMenuW(m, MF_STRING, ID_SHORTCUTS, w!("Keyboard shortcuts…"));
             let _ = AppendMenuW(m, MF_STRING | if auto { MF_CHECKED } else { MF_UNCHECKED }, ID_AUTOSTART, w!("Start with Windows"));
             let _ = AppendMenuW(m, MF_SEPARATOR, 0, None);
             let _ = AppendMenuW(m, MF_STRING, ID_EXIT, w!("Exit"));
@@ -432,12 +484,72 @@ impl App {
             let _ = PostMessageW(self.hwnd, WM_NULL, WPARAM(0), LPARAM(0));
             let _ = DestroyMenu(m);
             match cmd.0 as usize {
+                ID_SHORTCUTS => self.open_settings(),
                 ID_AUTOSTART => set_autostart(!auto),
                 ID_EXIT => {
                     let _ = DestroyWindow(self.hwnd);
                 }
                 _ => {}
             }
+        }
+    }
+
+    // ---- keyboard shortcuts -------------------------------------------------
+
+    /// A brighter/dimmer shortcut: move every display by `delta` and flash
+    /// the popup as feedback without taking focus from the current app.
+    fn shortcut(&mut self, delta: i32) {
+        let _ = self.tx.send(Cmd::Nudge(delta));
+        if !self.visible() {
+            self.open(false);
+        }
+        if self.osd {
+            unsafe {
+                SetTimer(self.hwnd, TIMER_OSD, OSD_MS, None);
+            }
+        }
+    }
+
+    fn end_osd(&mut self) {
+        if self.osd {
+            self.osd = false;
+            unsafe {
+                let _ = KillTimer(self.hwnd, TIMER_OSD);
+            }
+        }
+    }
+
+    fn open_settings(&mut self) {
+        if let Some(s) = &self.settings {
+            unsafe {
+                let _ = SetForegroundWindow(s.hwnd);
+            }
+            return;
+        }
+        // Released while the window is open, so pressing the current
+        // shortcut types it into the box instead of changing brightness.
+        shortcuts::unregister(self.hwnd);
+        let icon = unsafe { make_icon(GetSystemMetricsForDpi(SM_CXICON, GetDpiForSystem()), 0xFFB347) };
+        self.settings = Settings::open(self.hwnd, self.hotkeys, self.face, icon);
+        if self.settings.is_none() {
+            let _ = self.hotkeys.register(self.hwnd);
+        }
+    }
+
+    fn settings_done(&mut self, save: bool) {
+        let Some(s) = &self.settings else { return };
+        if save {
+            let new = s.read();
+            if let Err(e) = new.validate().and_then(|_| new.register(self.hwnd)) {
+                s.error(&e);
+                return;
+            }
+            new.save();
+            self.hotkeys = new;
+            self.settings = None;
+        } else {
+            self.settings = None;
+            let _ = self.hotkeys.register(self.hwnd);
         }
     }
 
@@ -451,7 +563,13 @@ impl App {
         // A click on the tray icon while the popup is open first deactivates
         // (and hides) the popup; don't immediately reopen it.
         let since_hide = unsafe { GetTickCount() }.wrapping_sub(self.hidden_at);
-        if self.visible() {
+        if self.visible() && self.osd {
+            // Shown by a shortcut: keep it open as a normal popup.
+            self.end_osd();
+            unsafe {
+                let _ = SetForegroundWindow(self.hwnd);
+            }
+        } else if self.visible() {
             self.hide();
         } else if since_hide > 300 {
             self.show();
@@ -459,6 +577,13 @@ impl App {
     }
 
     fn show(&mut self) {
+        self.open(true);
+    }
+
+    /// Shows the popup in the corner next to the taskbar. `interactive`
+    /// takes focus and re-reads every display; otherwise it is the brief,
+    /// non-focused feedback shown for keyboard shortcuts.
+    fn open(&mut self, interactive: bool) {
         unsafe {
             set_eco(false);
             self.theme = Theme::load();
@@ -484,13 +609,19 @@ impl App {
             self.touched = false;
             self.hover = None;
             self.focus = self.focus.min(self.rows.len().saturating_sub(1));
-            self.place(true);
-            let _ = SetForegroundWindow(self.hwnd);
-            let _ = self.tx.send(Cmd::Refresh);
+            self.osd = !interactive;
+            if interactive {
+                self.place(SWP_SHOWWINDOW);
+                let _ = SetForegroundWindow(self.hwnd);
+                let _ = self.tx.send(Cmd::Refresh);
+            } else {
+                self.place(SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            }
         }
     }
 
     fn hide(&mut self) {
+        self.end_osd();
         if !self.visible() {
             return;
         }
@@ -504,25 +635,30 @@ impl App {
         set_eco(true);
     }
 
-    fn place(&self, show: bool) {
+    fn place(&self, flags: SET_WINDOW_POS_FLAGS) {
         let (w, h) = self.size();
         let (x, y, bottom) = self.anchor;
         let y = if bottom { y - h } else { y };
-        let flags = if show { SWP_SHOWWINDOW } else { SWP_NOACTIVATE };
         unsafe {
             let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, x, y, w, h, flags);
             self.invalidate();
         }
     }
 
-    fn on_rows(&mut self, mut rows: Vec<Row>) {
+    /// Displays and levels from the worker. `delta` is the shortcut nudge the
+    /// worker applied to hardware displays; software-dimmed ones get it here.
+    fn on_rows(&mut self, mut rows: Vec<Row>, delta: i32) {
         for r in &mut rows {
-            if let Some(dev) = &r.soft {
-                r.value = self.dim_value(dev);
+            if let Some(dev) = r.soft.clone() {
+                r.value = self.dim_value(&dev);
+                if delta != 0 {
+                    r.value = (r.value as i32 + delta).clamp(0, 100) as u32;
+                    self.set_dim(&dev, r.value);
+                }
             }
         }
         let same = rows.len() == self.rows.len();
-        if same && self.touched {
+        if same && self.touched && delta == 0 {
             for (old, new) in self.rows.iter_mut().zip(rows) {
                 if old.soft != new.soft {
                     old.value = new.value;
@@ -544,7 +680,7 @@ impl App {
             if same {
                 self.invalidate();
             } else {
-                self.place(false);
+                self.place(SWP_NOACTIVATE);
             }
         }
         self.tray(NIM_MODIFY);

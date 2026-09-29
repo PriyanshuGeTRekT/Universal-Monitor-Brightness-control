@@ -10,16 +10,21 @@ $pages = @(@('banner', 1280, 600, 'banner'), @('where', 1280, 720, 'tray'), @('a
 foreach ($p in $pages) {
   $name, $w, $h, $file = $p
   $png = "$out\$file.png"
-  $url = 'file:///' + ("$src\$name.html" -replace '\\', '/')
+  # Paths may contain spaces: render to a temp file and pass an encoded URL.
+  $tmp = "$env:TEMP\brightness-tray-render.png"
+  Remove-Item $tmp -ErrorAction SilentlyContinue
+  $url = ([System.Uri]"$src\$name.html").AbsoluteUri
   # Render 180px taller than needed and crop: headless Edge sometimes leaves
   # a tile near the bottom edge unpainted.
-  $args = @('--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2',
-            "--user-data-dir=$profileDir", "--window-size=$w,$($h + 180)", "--screenshot=$png", '--virtual-time-budget=1500', $url)
-  Start-Process -FilePath $edge -ArgumentList $args -Wait -WindowStyle Hidden
-  $img = [System.Drawing.Bitmap]::FromFile($png)
+  $edgeArgs = @('--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2',
+            "--user-data-dir=`"$profileDir`"", "--window-size=$w,$($h + 180)", "--screenshot=`"$tmp`"", '--virtual-time-budget=1500', $url)
+  Start-Process -FilePath $edge -ArgumentList $edgeArgs -Wait -WindowStyle Hidden
+  if (-not (Test-Path $tmp)) { "$file.png FAILED"; continue }
+  $img = [System.Drawing.Bitmap]::FromStream((New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($tmp))))
   $crop = $img.Clone((New-Object System.Drawing.Rectangle 0, 0, ($w * 2), ($h * 2)), $img.PixelFormat)
   $img.Dispose()
   $crop.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
   $crop.Dispose()
+  Remove-Item $tmp
   "$file.png"
 }

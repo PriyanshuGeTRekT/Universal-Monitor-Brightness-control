@@ -15,9 +15,9 @@
 
 A tiny Windows tray app that controls the brightness of **every** display you
 plug in: laptop panels, external monitors and TVs. Click the sun in the tray,
-drag a slider, done. It is a single ~330 KB exe with no installer, no runtime
+drag a slider, done. It is a single ~340 KB exe with no installer, no runtime
 and no background work. When the popup is closed it uses 0% CPU and about
-250 KB of RAM.
+300 KB of RAM.
 
 ## Download
 
@@ -64,6 +64,7 @@ completely, so it costs nothing when unused.
 ## Features
 
 - **Every display at once.** Laptop panel, external monitors and TVs, each with its own slider.
+- **Keyboard shortcuts.** Pick your own global shortcuts for brighter and dimmer, and use them from any app. [More below](#keyboard-shortcuts).
 - **Lives in the system tray.** Left-click the sun to open, click anywhere else (or press `Esc`) to close. Closing never quits the app.
 - **Start with Windows.** Right-click the icon and tick *Start with Windows*. It starts silently in the tray at logon.
 - **Mouse, wheel and keyboard.** Drag, scroll over a slider, or use `←` `→` `↑` `↓`, `PgUp`/`PgDn`, `Home`/`End` and `Tab`.
@@ -72,15 +73,32 @@ completely, so it costs nothing when unused.
 - **Single instance.** Launching it again just opens the popup of the running copy.
 - **Hot-plug aware.** Displays are re-detected every time the popup opens.
 
+## Keyboard shortcuts
+
+<img src="docs/images/shortcuts.png" alt="Keyboard shortcuts window" width="398" align="right">
+
+Right-click the tray icon and choose **Keyboard shortcuts…**. Click a box and
+press the keys you want, for example `Ctrl` + `Alt` + `↑` and `Ctrl` + `Alt` + `↓`.
+Pick how much each press changes (1–20%) and hit **Save**.
+
+- The shortcuts work from **any app**. Every display moves together by the chosen step.
+- A small popup flashes up in the corner so you can see the new level. It doesn't take focus from what you're doing.
+- **Hold** the keys to keep going.
+- Shortcuts need `Ctrl` or `Alt` (or use an `F`-key), so normal typing never triggers them. If another app already owns a combination, you'll be told when you save.
+- `Backspace` clears a box. Nothing is set until you add a shortcut yourself.
+- They use Windows' `RegisterHotKey`: there's no keyboard hook, and nothing runs until you press them.
+
+<br clear="right">
+
 ## Tiny footprint
 
 Measured on Windows 11 with the popup closed:
 
 | | |
 | --- | --- |
-| Exe size | **~330 KB** (one file, no DLLs, no runtime) |
+| Exe size | **~340 KB** (one file, no DLLs, no runtime) |
 | CPU while idle | **0 ms** over 15 s (both threads are blocked, no timers, no polling) |
-| Memory while idle | **~250 KB** working set |
+| Memory while idle | **~300 KB** working set |
 | Power mode | Runs under **EcoQoS** (efficiency mode) whenever the popup is hidden |
 
 ## How it works
@@ -90,7 +108,7 @@ Measured on Windows 11 with the popup closed:
 </p>
 
 - **Built on:** Rust with the [`windows`](https://crates.io/crates/windows) crate, calling Win32 directly. There's no GUI framework: the popup is drawn by a ~100-line anti-aliased software rasteriser plus GDI text.
-- **UI thread:** tray icon, popup and software-dimming overlays. It sleeps in `GetMessageW`.
+- **UI thread:** tray icon, popup, keyboard shortcuts and software-dimming overlays. It sleeps in `GetMessageW`.
 - **Worker thread:** enumerates displays and talks DDC/CI (`dxva2.dll`) and WMI (`root\WMI`), which can block for tens of milliseconds per call. It sleeps in `recv()`.
 - **When the popup closes:** all monitor handles and COM objects are released, the working set is trimmed and the process switches to EcoQoS.
 
@@ -101,6 +119,7 @@ Measured on Windows 11 with the popup closed:
 | Open the sliders | Left-click the sun icon in the tray |
 | Close | Click anywhere else, or press `Esc` |
 | Change brightness | Drag, mouse wheel, or arrow keys (`Shift`+`Tab` / `Tab` switches display) |
+| Brighter / dimmer from anywhere | Your [keyboard shortcuts](#keyboard-shortcuts) (set them via right-click → **Keyboard shortcuts…**) |
 | Start with Windows | Right-click the icon → **Start with Windows** |
 | Quit | Right-click the icon → **Exit** |
 
@@ -134,6 +153,15 @@ rustup default stable-x86_64-pc-windows-gnu
 cargo build --release            # -> target\release\BrightnessTray.exe
 ```
 
+### Command line
+
+| Argument | Effect |
+| --- | --- |
+| `--background` | Start hidden in the tray (used by *Start with Windows*) |
+| `--shortcuts` | Open the keyboard shortcuts window, even when the app is already running |
+
+Settings (shortcuts and step) are stored under `HKEY_CURRENT_USER\Software\BrightnessTray`.
+
 ### Environment variables
 
 | Variable | Effect |
@@ -156,6 +184,9 @@ HTML sources with headless Edge.
   backlight, so it doesn't save power. The mouse cursor isn't dimmed, and
   exclusive-fullscreen games may draw above the overlay.
 - **The icon disappeared.** It is probably in the **^** overflow area of the taskbar.
+- **A shortcut stopped working.** Another app registered the same keys first,
+  for example graphics-driver tools that use `Ctrl` + `Alt` + arrows. Open
+  **Keyboard shortcuts…** and pick a different combination.
 - **It doesn't start with Windows, and isn't listed under Task Manager → Startup apps.**
   The startup entry was probably written from inside a packaged (MSIX) app,
   for example a terminal running inside a Microsoft Store app or an AI
@@ -169,7 +200,9 @@ HTML sources with headless Edge.
 ```
 src/main.rs      tray icon, popup window, input, software-dimming overlays
 src/backend.rs   display discovery, DDC/CI, WMI (worker thread)
+src/shortcuts.rs global keyboard shortcuts and their settings window
 src/gfx.rs       anti-aliased rasteriser for the slider and the icons
+build.rs         embeds the Windows manifest (themed controls, DPI awareness)
 build.ps1        release build into dist\
 install.ps1      per-user install + Start with Windows
 uninstall.ps1    remove it again
