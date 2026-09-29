@@ -153,6 +153,13 @@ HTML sources with headless Edge.
   backlight, so it doesn't save power. The mouse cursor isn't dimmed, and
   exclusive-fullscreen games may draw above the overlay.
 - **The icon disappeared.** It is probably in the **^** overflow area of the taskbar.
+- **It doesn't start with Windows, and isn't listed under Task Manager → Startup apps.**
+  The startup entry was probably written from inside a packaged (MSIX) app,
+  for example a terminal running inside a Microsoft Store app or an AI
+  assistant's desktop app. Windows silently redirects those registry writes
+  into the app's private container, so it never sees them at logon. To fix
+  it, start `BrightnessTray.exe` by double-clicking it in File Explorer, then
+  right-click the tray icon and tick **Start with Windows**.
 
 ## Project layout
 
