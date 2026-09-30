@@ -83,6 +83,7 @@ Pick how much each press changes (1–20%) and hit **Save**.
 
 - The shortcuts work from **any app**. Every display moves together by the chosen step.
 - A small popup flashes up in the corner so you can see the new level. It doesn't take focus from what you're doing.
+- **Games are left alone.** While a game runs in exclusive full screen, the brightness changes silently with no popup, because a window appearing over such a game knocks it out of full screen. The **Show popup** setting lets you choose *Always*, *Except over full-screen games* (the default) or *Never*.
 - **Hold** the keys to keep going.
 - Shortcuts need `Ctrl` or `Alt` (or use an `F`-key), so normal typing never triggers them. If another app already owns a combination, you'll be told when you save.
 - `Backspace` clears a box. Nothing is set until you add a shortcut yourself.
@@ -184,6 +185,11 @@ HTML sources with headless Edge.
   backlight, so it doesn't save power. The mouse cursor isn't dimmed, and
   exclusive-fullscreen games may draw above the overlay.
 - **The icon disappeared.** It is probably in the **^** overflow area of the taskbar.
+- **A game drops out of full screen or minimizes when I use a shortcut.**
+  Set **Show popup** in **Keyboard shortcuts…** to *Except over full-screen
+  games* (the default since v1.1.1) or *Never*. Some games run in borderless
+  full screen, which Windows reports like any other window; those keep
+  showing the popup unless you pick *Never*.
 - **A shortcut stopped working.** Another app registered the same keys first,
   for example graphics-driver tools that use `Ctrl` + `Alt` + arrows. Open
   **Keyboard shortcuts…** and pick a different combination.

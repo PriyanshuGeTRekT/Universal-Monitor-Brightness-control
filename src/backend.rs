@@ -120,7 +120,8 @@ fn run(rx: Receiver<Cmd>, hwnd: HWND, msg: u32) {
 
 enum Ctl {
     Wmi,
-    Ddc { h: HANDLE, max: u32 },
+    /// `key` identifies the physical monitor in `Backend::known`.
+    Ddc { h: HANDLE, max: u32, key: String },
     Soft(String),
 }
 
@@ -130,10 +131,20 @@ struct Mon {
     value: u32,
 }
 
+/// A monitor that has answered DDC/CI before, with its last known levels.
+/// Kept across `release()` so that one missed reply (monitors often ignore a
+/// read right after a write) can't turn it into a software-dimmed display.
+struct Known {
+    key: String,
+    max: u32,
+    value: u32,
+}
+
 #[derive(Default)]
 struct Backend {
     mons: Vec<Mon>,
     wmi: Option<Wmi>,
+    known: Vec<Known>,
 }
 
 impl Backend {
@@ -151,15 +162,20 @@ impl Backend {
     fn set(&mut self, i: usize, v: u32) {
         let Some(m) = self.mons.get_mut(i) else { return };
         m.value = v;
-        match m.ctl {
+        match &m.ctl {
             Ctl::Wmi => {
                 if let Some(w) = &self.wmi {
                     w.set(v);
                 }
             }
-            Ctl::Ddc { h, max } => unsafe {
-                SetVCPFeature(h, VCP_BRIGHTNESS, (v * max + 50) / 100);
-            },
+            Ctl::Ddc { h, max, key } => {
+                let raw = (v * max + 50) / 100;
+                if retry(|| unsafe { SetVCPFeature(*h, VCP_BRIGHTNESS, raw) != 0 }) {
+                    if let Some(k) = self.known.iter_mut().find(|k| &k.key == key) {
+                        k.value = v;
+                    }
+                }
+            }
             Ctl::Soft(_) => {} // handled by the UI thread
         }
     }
@@ -227,7 +243,7 @@ impl Backend {
                 .map(|t| t.name.clone())
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| format!("Display {}", external.len() + 1));
-            if force_soft || !ddc_monitors(hm, &name, &mut external) {
+            if force_soft || !ddc_monitors(hm, &dev, &name, &mut external, &mut self.known) {
                 external.push(Mon { ctl: Ctl::Soft(dev), name, value: 100 });
             }
         }
@@ -262,7 +278,9 @@ fn demo_rows() -> Vec<Row> {
 }
 
 /// Adds every DDC/CI-capable physical monitor behind `hm`; false if none.
-fn ddc_monitors(hm: HMONITOR, name: &str, out: &mut Vec<Mon>) -> bool {
+/// A monitor that answered before but misses this read keeps DDC/CI control
+/// with its last known levels instead of falling back to software dimming.
+fn ddc_monitors(hm: HMONITOR, dev: &str, name: &str, out: &mut Vec<Mon>, known: &mut Vec<Known>) -> bool {
     let before = out.len();
     unsafe {
         let mut n = 0u32;
@@ -275,20 +293,42 @@ fn ddc_monitors(hm: HMONITOR, name: &str, out: &mut Vec<Mon>) -> bool {
         }
         for (k, pm) in pms.iter().enumerate() {
             let h = pm.hPhysicalMonitor;
+            let key = format!("{dev}#{k}");
             let (mut cur, mut max) = (0u32, 0u32);
-            // DDC/CI reads fail transiently on some monitors; retry once.
-            let ok = (0..2).any(|_| {
-                GetVCPFeatureAndVCPFeatureReply(h, VCP_BRIGHTNESS, None, &mut cur, Some(&mut max)) != 0
-            });
-            if !ok || max == 0 {
+            let read = retry(|| GetVCPFeatureAndVCPFeatureReply(h, VCP_BRIGHTNESS, None, &mut cur, Some(&mut max)) != 0);
+            let levels = if read && max > 0 {
+                let value = ((cur * 100 + max / 2) / max).min(100);
+                match known.iter_mut().find(|c| c.key == key) {
+                    Some(c) => (c.max, c.value) = (max, value),
+                    None => known.push(Known { key: key.clone(), max, value }),
+                }
+                Some((max, value))
+            } else {
+                known.iter().find(|c| c.key == key).map(|c| (c.max, c.value))
+            };
+            let Some((max, value)) = levels else {
                 let _ = DestroyPhysicalMonitor(h);
                 continue;
-            }
+            };
             let name = if n > 1 { format!("{name} ({})", k + 1) } else { name.to_string() };
-            out.push(Mon { ctl: Ctl::Ddc { h, max }, name, value: ((cur * 100 + max / 2) / max).min(100) });
+            out.push(Mon { ctl: Ctl::Ddc { h, max, key }, name, value });
         }
     }
     out.len() > before
+}
+
+/// DDC/CI calls fail transiently, especially right after a write; try a few
+/// times with a short pause (only costs anything when a call fails).
+fn retry(mut f: impl FnMut() -> bool) -> bool {
+    for attempt in 0..4 {
+        if attempt > 0 {
+            thread::sleep(std::time::Duration::from_millis(40));
+        }
+        if f() {
+            return true;
+        }
+    }
+    false
 }
 
 fn wide_str(buf: &[u16]) -> String {

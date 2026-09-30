@@ -43,8 +43,12 @@ const ID_EXIT: usize = 2;
 const ID_SHORTCUTS: usize = 3;
 const TIMER_TRAY: usize = 1;
 const TIMER_OSD: usize = 2;
+const TIMER_RELEASE: usize = 3;
 /// How long the popup stays up after a keyboard shortcut.
 const OSD_MS: u32 = 1500;
+/// After a shortcut used without the popup, how long to keep the monitor
+/// handles open for the next press before releasing them.
+const RELEASE_MS: u32 = 3000;
 
 const CLASS: PCWSTR = w!("BrightnessTray.Popup");
 const DIM_CLASS: PCWSTR = w!("BrightnessTray.Dim");
@@ -325,6 +329,12 @@ impl App {
                         self.hide();
                     }
                 }
+                WM_TIMER if w.0 == TIMER_RELEASE => {
+                    let _ = KillTimer(self.hwnd, TIMER_RELEASE);
+                    if !self.visible() {
+                        let _ = self.tx.send(Cmd::Release);
+                    }
+                }
                 WM_CLOSE => self.hide(),
                 WM_PAINT => self.paint(),
                 WM_ERASEBKGND => return Some(LRESULT(1)),
@@ -500,12 +510,18 @@ impl App {
     /// the popup as feedback without taking focus from the current app.
     fn shortcut(&mut self, delta: i32) {
         let _ = self.tx.send(Cmd::Nudge(delta));
-        if !self.visible() {
-            self.open(false);
-        }
-        if self.osd {
-            unsafe {
+        unsafe {
+            if self.visible() {
+                if self.osd {
+                    SetTimer(self.hwnd, TIMER_OSD, OSD_MS, None);
+                }
+            } else if self.hotkeys.show_popup() {
+                self.open(false);
                 SetTimer(self.hwnd, TIMER_OSD, OSD_MS, None);
+            } else {
+                // No popup (e.g. over a full-screen game): change brightness
+                // silently, and release the monitors once the presses stop.
+                SetTimer(self.hwnd, TIMER_RELEASE, RELEASE_MS, None);
             }
         }
     }
@@ -651,7 +667,10 @@ impl App {
         for r in &mut rows {
             if let Some(dev) = r.soft.clone() {
                 r.value = self.dim_value(&dev);
-                if delta != 0 {
+                // An overlay appearing over an exclusive full-screen game
+                // would knock it out of full screen, and it wouldn't be
+                // visible there anyway.
+                if delta != 0 && !shortcuts::fullscreen_game() {
                     r.value = (r.value as i32 + delta).clamp(0, 100) as u32;
                     self.set_dim(&dev, r.value);
                 }

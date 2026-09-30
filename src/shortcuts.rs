@@ -17,6 +17,7 @@ use windows::Win32::System::Registry::*;
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const HK_UP: i32 = 1;
@@ -25,6 +26,14 @@ pub const HK_DOWN: i32 = 2;
 pub const WM_SETTINGS: u32 = WM_APP + 4;
 pub const STEPS: [u32; 5] = [1, 2, 5, 10, 20];
 const DEFAULT_STEP: u32 = 5;
+
+/// When a shortcut shows the popup as feedback.
+pub const POPUP_ALWAYS: u32 = 0;
+/// Default: not while an exclusive full-screen game owns the display, which
+/// would drop out of full screen (and often minimize) if a window appeared.
+pub const POPUP_EXCEPT_GAMES: u32 = 1;
+pub const POPUP_NEVER: u32 = 2;
+const POPUP_LABELS: [&str; 3] = ["Always", "Except over full-screen games", "Never"];
 
 const KEY: PCWSTR = w!("Software\\BrightnessTray");
 const CLASS: PCWSTR = w!("BrightnessTray.Shortcuts");
@@ -42,18 +51,30 @@ pub struct Hotkeys {
     pub up: u32,
     pub down: u32,
     pub step: u32,
+    pub popup: u32,
 }
 
 impl Hotkeys {
     pub fn load() -> Self {
         let step = get(w!("Step")).filter(|s| STEPS.contains(s)).unwrap_or(DEFAULT_STEP);
-        Self { up: get(w!("HotkeyUp")).unwrap_or(0) & 0xFFFF, down: get(w!("HotkeyDown")).unwrap_or(0) & 0xFFFF, step }
+        let popup = get(w!("Popup")).filter(|&p| p <= POPUP_NEVER).unwrap_or(POPUP_EXCEPT_GAMES);
+        Self { up: get(w!("HotkeyUp")).unwrap_or(0) & 0xFFFF, down: get(w!("HotkeyDown")).unwrap_or(0) & 0xFFFF, step, popup }
     }
 
     pub fn save(&self) {
         set(w!("HotkeyUp"), self.up);
         set(w!("HotkeyDown"), self.down);
         set(w!("Step"), self.step);
+        set(w!("Popup"), self.popup);
+    }
+
+    /// Whether a shortcut press should show the popup right now.
+    pub fn show_popup(&self) -> bool {
+        match self.popup {
+            POPUP_ALWAYS => true,
+            POPUP_NEVER => false,
+            _ => !fullscreen_game(),
+        }
     }
 
     /// Registers both shortcuts, or neither if one is already taken.
@@ -88,6 +109,13 @@ impl Hotkeys {
         }
         Ok(())
     }
+}
+
+/// True while an app runs Direct3D in exclusive full-screen mode: the same
+/// signal Windows uses to hold back its own notifications during games.
+/// Any window appearing over such an app makes it leave full screen.
+pub fn fullscreen_game() -> bool {
+    unsafe { SHQueryUserNotificationState().is_ok_and(|s| s == QUNS_RUNNING_D3D_FULL_SCREEN) }
 }
 
 pub fn unregister(hwnd: HWND) {
@@ -162,6 +190,7 @@ pub struct Settings {
     up: HWND,
     down: HWND,
     step: HWND,
+    popup: HWND,
     font: HFONT,
     icon: HICON,
 }
@@ -198,7 +227,7 @@ impl Settings {
             let s = |v: i32| v * dpi as i32 / 96;
 
             let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-            let mut rc = RECT { left: 0, top: 0, right: s(392), bottom: s(218) };
+            let mut rc = RECT { left: 0, top: 0, right: s(392), bottom: s(256) };
             let _ = AdjustWindowRectExForDpi(&mut rc, style, false, WINDOW_EX_STYLE(0), dpi);
             let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
             let wa = mi.rcWork;
@@ -247,9 +276,12 @@ impl Settings {
             child(0, w!("STATIC"), w!("Decrease brightness"), 0, 0, 16, 100, 140, 20);
             let down = child(WS_EX_CLIENTEDGE.0, w!("msctls_hotkey32"), w!(""), tab, 11, 160, 96, 216, 26);
             child(0, w!("STATIC"), w!("Change per press"), 0, 0, 16, 138, 140, 20);
-            let step = child(0, w!("COMBOBOX"), w!(""), tab | 0x0003 /* CBS_DROPDOWNLIST */ | WS_VSCROLL.0, 12, 160, 133, 110, 200);
-            child(0, w!("BUTTON"), w!("Save"), tab | 0x0001 /* BS_DEFPUSHBUTTON */, ID_OK, 196, 176, 86, 28);
-            child(0, w!("BUTTON"), w!("Cancel"), tab, ID_CANCEL, 290, 176, 86, 28);
+            let list = tab | 0x0003 /* CBS_DROPDOWNLIST */ | WS_VSCROLL.0;
+            let step = child(0, w!("COMBOBOX"), w!(""), list, 12, 160, 133, 110, 200);
+            child(0, w!("STATIC"), w!("Show popup"), 0, 0, 16, 175, 140, 20);
+            let popup = child(0, w!("COMBOBOX"), w!(""), list, 13, 160, 170, 216, 200);
+            child(0, w!("BUTTON"), w!("Save"), tab | 0x0001 /* BS_DEFPUSHBUTTON */, ID_OK, 196, 214, 86, 28);
+            child(0, w!("BUTTON"), w!("Cancel"), tab, ID_CANCEL, 290, 214, 86, 28);
 
             SendMessageW(up, HKM_SETHOTKEY, WPARAM(hk.up as usize), LPARAM(0));
             SendMessageW(down, HKM_SETHOTKEY, WPARAM(hk.down as usize), LPARAM(0));
@@ -259,13 +291,18 @@ impl Settings {
             }
             let sel = STEPS.iter().position(|&v| v == hk.step).unwrap_or(2);
             SendMessageW(step, CB_SETCURSEL, WPARAM(sel), LPARAM(0));
+            for text in POPUP_LABELS {
+                let label: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+                SendMessageW(popup, CB_ADDSTRING, WPARAM(0), LPARAM(label.as_ptr() as isize));
+            }
+            SendMessageW(popup, CB_SETCURSEL, WPARAM(hk.popup as usize), LPARAM(0));
 
             SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_BIG as usize), LPARAM(icon.0 as isize));
             SendMessageW(hwnd, WM_SETICON, WPARAM(ICON_SMALL as usize), LPARAM(icon.0 as isize));
             let _ = ShowWindow(hwnd, SW_SHOW);
             let _ = SetForegroundWindow(hwnd);
             let _ = SetFocus(up);
-            Some(Self { hwnd, up, down, step, font, icon })
+            Some(Self { hwnd, up, down, step, popup, font, icon })
         }
     }
 
@@ -274,7 +311,9 @@ impl Settings {
             let get = |c: HWND| SendMessageW(c, HKM_GETHOTKEY, WPARAM(0), LPARAM(0)).0 as u32 & 0xFFFF;
             let sel = SendMessageW(self.step, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
             let step = usize::try_from(sel).ok().and_then(|i| STEPS.get(i).copied()).unwrap_or(DEFAULT_STEP);
-            Hotkeys { up: get(self.up), down: get(self.down), step }
+            let popup = SendMessageW(self.popup, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+            let popup = u32::try_from(popup).ok().filter(|&p| p <= POPUP_NEVER).unwrap_or(POPUP_EXCEPT_GAMES);
+            Hotkeys { up: get(self.up), down: get(self.down), step, popup }
         }
     }
 
