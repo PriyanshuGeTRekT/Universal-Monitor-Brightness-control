@@ -91,6 +91,16 @@ Pick how much each press changes (1–20%) and hit **Save**.
 
 <br clear="right">
 
+## Windhawk mod
+
+If you use [Windhawk](https://windhawk.net), the keyboard shortcuts are also
+available as a Windhawk mod: **Brightness Hotkeys for All Monitors**. It has
+the same display handling (DDC/CI, WMI and software dimming) and the same
+game-aware popup, with the settings in Windhawk. It has no tray slider. The
+source is in [`windhawk-mod/`](windhawk-mod/all-monitors-brightness-hotkeys.wh.cpp).
+
+<img src="docs/images/windhawk-popup.png" alt="The Windhawk mod's popup" width="298">
+
 ## Tiny footprint
 
 Measured on Windows 11 with the popup closed:
@@ -213,6 +223,7 @@ build.ps1        release build into dist\
 install.ps1      per-user install + Start with Windows
 uninstall.ps1    remove it again
 docs/            README images and the scripts that generate them
+windhawk-mod/    the same shortcuts as a Windhawk tool mod (C++)
 ```
 
 ## Star history
